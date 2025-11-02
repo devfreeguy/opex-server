@@ -1,65 +1,68 @@
 import express, { Application, NextFunction, Request, Response } from "express";
 import cookieParser from "cookie-parser";
-import Logging from "./v1/config/logging.js";
 import cors from "cors";
-import { NODE_ENV } from "./v1/config/config.js";
-import adminAuthRoutes from "./v1/routes/admin/auth.routes.js";
+import Logging from "./v1/config/logging.js";
+import { errorMiddleware } from "./v1/middlewares/error.middleware.js";
+import { allowedOrigins } from "./v1/utils/cors.utils.js";
+import { baseUrl } from "./v1/utils/text.utils.js";
+
+// Route imports
+import { authRoute } from "./v1/routes/auth.route.js";
 
 export default async function setup(app: Application): Promise<Application> {
-  if (NODE_ENV === "production") {
-    app.use(cors({ origin: "url" }));
-    app.options("*", cors({ origin: "url" }));
-  } else {
-    app.use(cors());
-    app.options("*", cors());
-  }
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
-  app.use(cookieParser());
-
-  app.use("/api/v1/admin/auth", adminAuthRoutes);
-
-  app.get("/", (req, res) => {
-    res.send("Welcome");
-  });
-  app.use("/404", (req, res) => {
-    res.status(404).send({ message: "Route not found" });
-  });
+  // Logging middleware - should be first to log all requests
   app.use((req: Request, res: Response, next: NextFunction) => {
     Logging.info(
-      `incoming -> method: [${req.method}] - url: [${req.url}] - ip: [${req.socket.remoteAddress}]`
+      `Incoming -> Method: [${req.method}] - URL: [${req.url}] - IP: [${req.socket.remoteAddress}]`
     );
 
     res.on("finish", () => {
       Logging.info(
-        `incoming -> method: [${req.method}] - url: [${req.url}] - ip: [${req.socket.remoteAddress}] - Status: [${res.statusCode}]`
+        `Completed -> Method: [${req.method}] - URL: [${req.url}] - Status: [${res.statusCode}]`
       );
     });
 
     next();
   });
 
-  app.use((req: Request, res: Response, next: NextFunction) => {
-    // Allow requests from all origins
-    //Will be configured for App specific domain later.
-    res.header("Access-Control-Allow-Origin", "*");
+  // CORS configuration
+  app.use(
+    cors({
+      origin: allowedOrigins,
+      credentials: true,
+      methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization"],
+    })
+  );
 
-    // Allow specific HTTP methods
-    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE");
+  // Body parsers
+  app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
 
-    // Allow specific custom headers (if needed)
-    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  // Cookie parser
+  app.use(cookieParser());
 
-    // Allow credentials (if your app uses credentials)
-    res.header("Access-Control-Allow-Credentials", "true");
-
-    // Handle preflight requests by responding with 200 status
-    if (req.method === "OPTIONS") {
-      return res.status(200).end();
-    }
-
-    // Pass control to the next middleware
-    next();
+  // Health check route
+  app.get("/", (req: Request, res: Response) => {
+    res.status(200).json({
+      status: "ok",
+      message: "Server is running",
+    });
   });
+
+  // API routes
+  app.use(baseUrl("/auth"), authRoute);
+
+  // 404 handler - must be after all routes
+  app.use((req: Request, res: Response) => {
+    res.status(404).json({
+      success: false,
+      message: "Route not found",
+    });
+  });
+
+  // Error handling middleware - must be last
+  app.use(errorMiddleware);
+
   return app;
 }

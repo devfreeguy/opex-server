@@ -1,27 +1,63 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call */
 import chalk from "chalk";
 
-//custom error and info logging to the console.
-//Classes of color for different console message
-
+/**
+ * Custom logger utility with colored console output
+ */
 export default class Logging {
-  public static log = (arg: unknown) => this.info(arg);
+  private static formatTimestamp(): string {
+    return new Date().toISOString();
+  }
 
-  public static info = (arg: unknown) =>
-    console.log(
-      chalk.blue(`[${new Date().toISOString()}] [info]`),
-      typeof arg === "string" ? chalk.blueBright(arg) : arg
-    );
+  private static formatMessage(arg: unknown): string {
+    if (typeof arg === "string") {
+      return arg;
+    }
 
-  public static warn = (arg: unknown) =>
-    console.log(
-      chalk.yellow(`[${new Date().toLocaleString()}] [warn]`),
-      typeof arg === "string" ? chalk.yellowBright(arg) : arg
-    );
+    if (arg instanceof Error) {
+      return `${arg.message}\n${arg.stack || ""}`;
+    }
 
-  public static error = (arg: unknown) =>
-    console.log(
-      chalk.red(`[${new Date().toLocaleString()}] [error]`),
-      typeof arg === "string" ? chalk.redBright(arg) : arg
-    );
+    try {
+      return JSON.stringify(arg, null, 2);
+    } catch {
+      return String(arg);
+    }
+  }
+
+  public static log = (arg: unknown): void => {
+    this.info(arg);
+  };
+
+  public static info = (arg: unknown): void => {
+    const timestamp = chalk.blue(`[${this.formatTimestamp()}] [INFO]`);
+    const message = typeof arg === "string" ? chalk.blueBright(arg) : arg;
+    console.log(timestamp, message);
+  };
+
+  public static warn = (arg: unknown): void => {
+    const timestamp = chalk.yellow(`[${this.formatTimestamp()}] [WARN]`);
+    const message = typeof arg === "string" ? chalk.yellowBright(arg) : arg;
+    console.warn(timestamp, message);
+  };
+
+  public static error = (arg: unknown): void => {
+    const timestamp = chalk.red(`[${this.formatTimestamp()}] [ERROR]`);
+    const message =
+      typeof arg === "string" ? chalk.redBright(arg) : this.formatMessage(arg);
+    console.error(timestamp, message);
+  };
+
+  public static success = (arg: unknown): void => {
+    const timestamp = chalk.green(`[${this.formatTimestamp()}] [SUCCESS]`);
+    const message = typeof arg === "string" ? chalk.greenBright(arg) : arg;
+    console.log(timestamp, message);
+  };
+
+  public static debug = (arg: unknown): void => {
+    if (process.env.NODE_ENV === "development") {
+      const timestamp = chalk.magenta(`[${this.formatTimestamp()}] [DEBUG]`);
+      const message = typeof arg === "string" ? chalk.magentaBright(arg) : arg;
+      console.log(timestamp, message);
+    }
+  };
 }

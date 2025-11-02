@@ -1,99 +1,71 @@
+import { JwtPayload } from "jsonwebtoken";
 import { Request, Response, NextFunction } from "express";
-import { verifyToken } from "../utils/jwt.utils.js";
-import dotenv from "dotenv";
+import { TokenPayload, verifyToken } from "../utils/jwt.utils.js";
+import { Role } from "../models/user.model.js";
 
-dotenv.config();
-
-// Define a custom interface that extends Request
-interface RequestWithUserData extends Request {
-  userData?: { userId: string }; // Adjust the type as needed
-}
-export interface RequestWithUser extends Request {
-  user?: any; // Use any or define a more specific type
-}
-
+// Extend Express request to hold `user`
 export interface AuthenticatedRequest extends Request {
-  user?: {
-    _id: string;
-  };
+  user?: TokenPayload;
 }
 
-export interface AdminRequest extends Request {
-  admin?: {
-    _id: string;
-  };
-}
-
-interface DecodedAdminToken {
-  adminId: string;
-  [key: string]: any;
-}
-
-export const adminAuthMiddleware = (
-  req: AdminRequest,
-  res: Response,
-  next: NextFunction
-) => {
-  const token = req.headers.authorization?.split(" ")[1]; // Bearer Token
-  if (!token) {
-    return res.status(401).send("Access denied. No token provided.");
-  }
-
-  try {
-    const decodedToken = verifyToken(token) as DecodedAdminToken;
-
-    if (decodedToken && typeof decodedToken.adminId === "string") {
-      req.admin = { _id: decodedToken.adminId };
-      return next();
-    } else {
-      return res.status(403).send("Access denied. Not an admin.");
-    }
-  } catch (error) {
-    return res.status(400).send("Invalid token.");
-  }
-};
-
-//Middleware to check if user is authenticated
-// export const isUserAuthenticated = (req: RequestWithUserData, res: Response, next: NextFunction) => {
-//   try {
-//     const token = req.headers.authorization?.split(' ')[1];
-//     if (!token) {
-//       return res.status(401).json({ message: 'Authentication failed' });
-//     }
-//     const decodedToken = verifyToken(token); // Use your verifyToken function
-//     if (decodedToken && typeof decodedToken === "object" && "userId" in decodedToken) {
-//       req.userData = { userId: decodedToken.userId }; // Add user data to the request object
-//       next();
-//     } else {
-//       return res.status(401).json({ message: 'Token verification failed' });
-//     }
-//   } catch (error) {
-//     return res.status(401).json({ message: 'Authentication failed', error });
-//   }
-// };
-
-export const isUserAuthenticated = (
+export const validateToken = (
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
 ) => {
   try {
-    const token = req.headers.authorization?.split(" ")[1];
+    let token: string | undefined;
+
+    // Check Authorization header (Bearer <token>)
+    if (req.headers.authorization?.startsWith("Bearer ")) {
+      token = req.headers.authorization.split(" ")[1];
+    }
+    
+    // If no token in header, check cookies
+    if (!token && req.cookies?.token) {
+      token = req.cookies.token;
+    }
+
+    // Reject if no token found
     if (!token) {
-      return res.status(401).json({ message: "Authentication failed" });
+      return res.status(401).json({ success: false, message: "Invalid token" });
     }
-    const decodedToken = verifyToken(token); // Use your verifyToken function
-    if (
-      decodedToken &&
-      typeof decodedToken === "object" &&
-      "userId" in decodedToken
-    ) {
-      req.user = { _id: decodedToken.userId }; // Add user ID directly to req.user
-      next();
-    } else {
-      return res.status(401).json({ message: "Token verification failed" });
+
+    // Verify token
+    const decodedToken = verifyToken(token) as JwtPayload | null;
+
+    // console.log("Decoded Token:", decodedToken);
+
+    if (decodedToken) {
+      const payload = {
+        uid: decodedToken.uid,
+        role: decodedToken.role,
+      };
+      // console.log("Payload:", payload);
+
+      // Attach payload to request object
+      req.user = payload;
+      return next();
     }
+
+    return res
+      .status(401)
+      .json({ success: false, message: "Token verification failed" });
   } catch (error) {
-    return res.status(401).json({ message: "Authentication failed", error });
+    return res
+      .status(401)
+      .json({ success: false, message: "Authentication failed", error });
   }
+};
+
+export const authorizeRoles = (...roles: Role[]) => {
+  return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    // console.log("User:", req.user);
+    if (req.user && roles.includes(req.user.role)) return next();
+    res.status(403).json({
+      success: false,
+      message:
+        "Access denied, you do not have sufficient permission to continue with this request",
+    });
+  };
 };
